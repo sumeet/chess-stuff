@@ -1,19 +1,17 @@
+use rand;
+use rand::prelude::SliceRandom;
+use shakmaty::uci::Uci;
 use shakmaty::{Chess, Color, Move, Position, Role};
 use std::io::Write;
 use std::io::{self, BufRead};
 use std::process::exit;
+use std::str::FromStr;
 use vampirc_uci::{parse_one, UciMessage, UciSquare};
 
 struct State {
     pos: Chess,
     white_sum: u8,
     black_sum: u8,
-}
-
-fn sq(uci_square: UciSquare) -> shakmaty::Square {
-    let file = shakmaty::File::from_char(uci_square.file).unwrap();
-    let rank = shakmaty::Rank::from_char((uci_square.rank + '0' as u8) as char).unwrap();
-    shakmaty::Square::from_coords(file, rank)
 }
 
 impl State {
@@ -41,9 +39,11 @@ impl State {
 fn main() {
     let mut state = State::init();
     let mut log_file = std::fs::File::create("/tmp/log.txt").unwrap();
+    let mut rng = rand::thread_rng();
 
     for line in io::stdin().lock().lines() {
-        let msg: UciMessage = parse_one(&line.unwrap());
+        let msg: UciMessage = dbg!(parse_one(&line.unwrap()));
+        write!(log_file, "{:?}\n", msg).unwrap();
         match msg {
             UciMessage::Uci => {
                 println!("id name smtbot");
@@ -60,13 +60,22 @@ fn main() {
                 moves,
                 ..
             } => {
-                for uci_move in moves {
-                    let from = sq(uci_move.from);
-                    let to = sq(uci_move.to);
-                    uci_move.promotion
-                    let shakmaty_move: Move = Move::Normal { role: 0, from, capture: None, to, promotion: None };
-                    state.pos.play_unchecked(&shakmaty_move);
+                // the client always sends all of the moves, so the only one we're interested in, is the last one
+                if moves.len() == 0 {
+                    continue;
                 }
+                let last_move = moves.last().unwrap();
+                let uci = Uci::from_str(&format!("{}", last_move)).unwrap();
+                let mov = uci.to_move(&mut state.pos).unwrap();
+                state.pos.play_unchecked(&mov);
+                println!("{}", UciMessage::UciOk);
+
+                // this is where we're gonna make a move
+                let move_list = state.pos.legal_moves();
+                let our_reply = move_list.choose(&mut rng).unwrap();
+                state.pos.play_unchecked(our_reply);
+                let uci = our_reply.to_uci(state.pos.castles().mode());
+                println!("bestmove {}", uci);
             }
             UciMessage::Go { .. } => {
                 println!("{}", UciMessage::UciOk);
