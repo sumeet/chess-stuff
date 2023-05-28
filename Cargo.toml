@@ -9,3 +9,5 @@ edition = "2021"
 shakmaty = "*"
 vampirc-uci = "*"
 rand = "*"
+pgn-reader = "*"
+flate2 = { version = "*", features = ["zlib-ng"], default-features = false }
