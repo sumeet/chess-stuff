@@ -14,7 +14,7 @@ def split_perc(dataset, percentages):
 
 
 if 1:
-    stop = 1_500_000
+    stop = 500_000
 
     with h5py.File('input.h5', "r") as f:
         input_board_batch = torch.from_numpy(f["input_board"][:stop])
@@ -64,7 +64,6 @@ class ChessMovePredictor(nn.Module):
         # 128*8*8 is the size of the flattened conv layer output,
         # and 7 is the size of the extra features tensor
         self.fc1 = nn.Linear(128*8*8 + 7, 256)
-        self.fc_res = nn.Linear(12*8*8, 256)  # Transform the original input to the same size as the output of fc1
         self.relu = nn.ReLU()
         self.fc_out = nn.Linear(256, 128+6)
 
@@ -74,7 +73,6 @@ class ChessMovePredictor(nn.Module):
         out = out.view(out.size(0), -1)  # Flatten tensor
         out = torch.cat((out, extra_features), dim=1)  # Concatenate extra features
         out = self.relu(self.fc1(out))
-        out = out.add(self.fc_res(board_tensor.view(board_tensor.size(0), -1)))  # Transform the original input
         out = self.fc_out(out)
         return out
 
