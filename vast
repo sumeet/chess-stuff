@@ -1,0 +1,25 @@
+#!/bin/bash
+IP=81.166.173.12
+PORT=11528
+
+case $1 in
+  seed)
+    scp -r -P $PORT ./train root@${IP}:./train
+    ssh -p $PORT root@${IP} "cat > /root/.vimrc" <<'EOF'
+syntax on
+set et
+set shiftwidth=4
+set tabstop=4
+EOF
+    ;;
+  ssh)
+    TERM=xterm-256color ssh -p $PORT root@${IP}
+    ;;
+  grab)
+     while true
+     do
+      scp -r -P $PORT root@${IP}:./train/checkpoint.pt ./train/checkpoint.pt
+      sleep 200
+    done
+    ;;
+esac

@@ -13,42 +13,8 @@ def split_perc(dataset, percentages):
     return random_split(dataset, lengths=split_lengths)
 
 
-if 1:
-    stop = 500_000
-
-    with h5py.File('input.h5', "r") as f:
-        input_board_batch = torch.from_numpy(f["input_board"][:stop])
-        input_extras_batch = torch.from_numpy(f["input_extras"][:stop])
-        output_batch = torch.from_numpy(f["output"][:stop])
-
-    dataset = TensorDataset(input_board_batch,
-                            input_extras_batch,
-                            output_batch)
-
-else:
-    class HDF5Dataset(Dataset):
-        def __init__(self, file_path):
-            self.file_path = file_path
-            self.file = h5py.File(self.file_path, "r", rdcc_nslots=1991, rdcc_nbytes=16_000 * (1024 ** 3))
-
-        def __len__(self):
-            return len(self.file["input_board"])
-#            with h5py.File(self.file_path, "r") as file:
-#                return len(file["input_board"])
-
-        def __getitem__(self, idx):
-    #        with h5py.File(self.file_path, "r") as f:
-            input_board = self.file["input_board"][idx]
-            input_extras = self.file["input_extras"][idx]
-            output = self.file["output"][idx]
-            return input_board, input_extras, output
-
-    dataset = HDF5Dataset("./input.h5")
-
-
 import contextlib
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
@@ -119,46 +85,78 @@ loss_fn = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.Adam(model.parameters())
 
 from multiprocessing import cpu_count
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 import time
 
-num_epochs = 10_000
+if __name__ == '__main__':
+    if 1:
+        stop = 50_000
+
+        with h5py.File('input.h5', "r") as f:
+            input_board_batch = torch.from_numpy(f["input_board"][:stop])
+            input_extras_batch = torch.from_numpy(f["input_extras"][:stop])
+            output_batch = torch.from_numpy(f["output"][:stop])
+
+        dataset = TensorDataset(input_board_batch,
+                                input_extras_batch,
+                                output_batch)
+
+    else:
+        class HDF5Dataset(Dataset):
+            def __init__(self, file_path):
+                self.file_path = file_path
+                self.file = h5py.File(self.file_path, "r", rdcc_nslots=1991, rdcc_nbytes=16_000 * (1024 ** 3))
+
+            def __len__(self):
+                return len(self.file["input_board"])
+    #            with h5py.File(self.file_path, "r") as file:
+    #                return len(file["input_board"])
+
+            def __getitem__(self, idx):
+        #        with h5py.File(self.file_path, "r") as f:
+                input_board = self.file["input_board"][idx]
+                input_extras = self.file["input_extras"][idx]
+                output = self.file["output"][idx]
+                return input_board, input_extras, output
+
+        dataset = HDF5Dataset("./input.h5")
 
 
-training_set, validation_set = split_perc(dataset, [0.8, 0.2])
+    num_epochs = 10_000
+    training_set, validation_set = split_perc(dataset, [0.8, 0.2])
 
-training_dataloader = DataLoader(training_set,
-                        shuffle=True,
-                        batch_size=10_000,
-                        persistent_workers=True,
-                        num_workers=cpu_count() - 1,
-                        prefetch_factor=50,
-                        pin_memory=True)
-validation_dataloader = DataLoader(validation_set,
-                        shuffle=True,
-                        batch_size=10_000,
-                        persistent_workers=True,
-                        num_workers=cpu_count() - 1,
-                        prefetch_factor=50,
-                        pin_memory=True)
+    training_dataloader = DataLoader(training_set,
+                            shuffle=True,
+                            batch_size=10_000,
+                            persistent_workers=True,
+                            num_workers=cpu_count() - 1,
+                            prefetch_factor=50,
+                            pin_memory=True)
+    validation_dataloader = DataLoader(validation_set,
+                            shuffle=True,
+                            batch_size=10_000,
+                            persistent_workers=True,
+                            num_workers=cpu_count() - 1,
+                            prefetch_factor=50,
+                            pin_memory=True)
 
-for epoch in range(num_epochs):
-    epoch_start = time.time()
+    for epoch in range(num_epochs):
+        epoch_start = time.time()
 
-    training_loss = model.run(training_dataloader, is_train=True)
-    validation_loss = model.run(validation_dataloader, is_train=False) 
+        training_loss = model.run(training_dataloader, is_train=True)
+        validation_loss = model.run(validation_dataloader, is_train=False) 
 
-    if epoch % 5 == 0:
-        filename = 'checkpoint.pt'
-        print(f'checkpointing torch model & optimizer to {filename}')
-        torch.save({
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'training_loss': training_loss,
-            'validation_loss': validation_loss,
-        }, filename)
+        if epoch % 5 == 0:
+            filename = 'checkpoint.pt'
+            print(f'checkpointing torch model & optimizer to {filename}')
+            torch.save({
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'training_loss': training_loss,
+                'validation_loss': validation_loss,
+            }, filename)
 
-    time_elapsed = time.time() - epoch_start
-    print('Epoch [{}/{}], Training loss: {:.4f} Validation loss: {:.4f} ({} seconds)'
-        .format(epoch+1, num_epochs, training_loss, validation_loss, time_elapsed))
+        time_elapsed = time.time() - epoch_start
+        print('Epoch [{}/{}], Training loss: {:.4f} Validation loss: {:.4f} ({} seconds)'
+            .format(epoch+1, num_epochs, training_loss, validation_loss, time_elapsed))
 

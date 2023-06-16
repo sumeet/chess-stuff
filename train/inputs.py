@@ -17,8 +17,8 @@ import h5py
 
 
 import chess
-import numpy as np
 import gzip
+import torch
 
 PIECES_ORDER = [
     "pawn",
@@ -32,7 +32,7 @@ PIECES = {name: i for i, name in enumerate(PIECES_ORDER)}
 
 
 def board_to_tensors(board):
-    tensor_board = np.zeros((12, 8, 8), dtype=np.float16)
+    tensor_board = torch.zeros((12, 8, 8), dtype=torch.float16)
 
     # Loop through all squares on the board
     for square in chess.SQUARES:
@@ -52,7 +52,7 @@ def board_to_tensors(board):
             # Place the piece in the tensor
             tensor_board[piece_index, row, col] = 1
 
-    tensor_extras = np.zeros(7, dtype=np.float16)
+    tensor_extras = torch.zeros(7, dtype=torch.float16)
     # Append castling rights
     tensor_extras[0] = int(board.has_kingside_castling_rights(chess.WHITE))
     tensor_extras[1] = int(board.has_queenside_castling_rights(chess.WHITE))
@@ -81,7 +81,7 @@ for i, src_file in enumerate("abcdefgh"):
             for l, dst_rank in enumerate("12345678"):
                 for piece_name in PIECES_ORDER:
                     # 128 for the board (8*8*2), 6 for the piece
-                    t = np.zeros(128 + 6, dtype=np.float16)
+                    t = torch.zeros(128 + 6, dtype=torch.float16)
                     src_index = i * 8 + j
                     dst_index = k * 8 + l
                     src_move = src_file + src_rank
@@ -138,7 +138,7 @@ def process_line_chunk(line_chunk):
             for ds, data in zip(
                     [input_board_ds, input_extras_ds, output_ds],
                     [input_board, input_extras, output]):
-                stacked_data = np.stack(data)
+                stacked_data = torch.stack(data)
                 ds.resize((new_size,) + stacked_data.shape[1:])
                 ds[current_size:new_size, ...] = stacked_data
 
@@ -192,27 +192,28 @@ def chunks(iterable, chunk_size):
 
 OUTPUT_H5_FILENAME = "input.h5"
 
-with gzip.open("output.chess.gz", "rb") as f:
-    line_pairs = ((line1, line2) for line1, line2 in zip(f, f))
-    training_size = 200_000
-    line_pairs = islice(line_pairs, training_size)
+if __name__ == '__main__':
+    with gzip.open("output.chess.gz", "rb") as f:
+        line_pairs = ((line1, line2) for line1, line2 in zip(f, f))
+        training_size = 200_000
+        line_pairs = islice(line_pairs, training_size)
 
-    with h5py.File(OUTPUT_H5_FILENAME, "w") as f:
-        input_board_ds = f.create_dataset(
-            "input_board", (0, 12, 8, 8), maxshape=(None, 12, 8, 8), dtype="float16", chunks=True, compression="gzip"
-        )
-        input_extras_ds = f.create_dataset(
-            "input_extras", (0, 7), maxshape=(None, 7), dtype="float16", chunks=True, compression="gzip"
-        )
-        output_ds = f.create_dataset(
-            "output", (0, 134), maxshape=(None, 134), dtype="float16", chunks=True, compression="gzip"
-        )
+        with h5py.File(OUTPUT_H5_FILENAME, "w") as f:
+            input_board_ds = f.create_dataset(
+                "input_board", (0, 12, 8, 8), maxshape=(None, 12, 8, 8), dtype="float16", chunks=True, compression="gzip"
+            )
+            input_extras_ds = f.create_dataset(
+                "input_extras", (0, 7), maxshape=(None, 7), dtype="float16", chunks=True, compression="gzip"
+            )
+            output_ds = f.create_dataset(
+                "output", (0, 134), maxshape=(None, 134), dtype="float16", chunks=True, compression="gzip"
+            )
 
-    with multiprocessing.Pool() as p:
-        chunk_size = 5_000
-        pair_chunks = chunks(line_pairs, chunk_size)
-        results = p.imap_unordered(process_line_chunk, enumerate(pair_chunks))
+        with multiprocessing.Pool() as p:
+            chunk_size = 5_000
+            pair_chunks = chunks(line_pairs, chunk_size)
+            results = p.imap_unordered(process_line_chunk, enumerate(pair_chunks))
 
-        for i, _ in enumerate(results):
-            print(f"processed {chunk_size * (i + 1)} games")
+            for i, _ in enumerate(results):
+                print(f"processed {chunk_size * (i + 1)} games")
 

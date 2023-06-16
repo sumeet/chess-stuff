@@ -1,0 +1,50 @@
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [1/10000], Training loss: 0.7988 Validation loss: 0.5857 (8.432636022567749 seconds)
+Epoch [2/10000], Training loss: 0.5789 Validation loss: 0.5717 (5.51605486869812 seconds)
+Epoch [3/10000], Training loss: 0.5688 Validation loss: 0.5649 (5.416506052017212 seconds)
+Epoch [4/10000], Training loss: 0.5628 Validation loss: 0.5591 (6.135659456253052 seconds)
+Epoch [5/10000], Training loss: 0.5570 Validation loss: 0.5538 (5.0969154834747314 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [6/10000], Training loss: 0.5524 Validation loss: 0.5499 (5.491217851638794 seconds)
+Epoch [7/10000], Training loss: 0.5477 Validation loss: 0.5447 (5.646690368652344 seconds)
+Epoch [8/10000], Training loss: 0.5424 Validation loss: 0.5392 (5.637371301651001 seconds)
+Epoch [9/10000], Training loss: 0.5386 Validation loss: 0.5374 (5.745146751403809 seconds)
+Epoch [10/10000], Training loss: 0.5361 Validation loss: 0.5340 (5.50472617149353 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [11/10000], Training loss: 0.5338 Validation loss: 0.5319 (5.457361221313477 seconds)
+Epoch [12/10000], Training loss: 0.5316 Validation loss: 0.5307 (5.543583631515503 seconds)
+Epoch [13/10000], Training loss: 0.5296 Validation loss: 0.5288 (5.442336082458496 seconds)
+Epoch [14/10000], Training loss: 0.5281 Validation loss: 0.5288 (5.7779576778411865 seconds)
+Epoch [15/10000], Training loss: 0.5264 Validation loss: 0.5277 (5.332071304321289 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [16/10000], Training loss: 0.5246 Validation loss: 0.5260 (5.797008514404297 seconds)
+Epoch [17/10000], Training loss: 0.5235 Validation loss: 0.5244 (5.820212364196777 seconds)
+Epoch [18/10000], Training loss: 0.5217 Validation loss: 0.5211 (5.446230411529541 seconds)
+Epoch [19/10000], Training loss: 0.5193 Validation loss: 0.5197 (5.494110822677612 seconds)
+Epoch [20/10000], Training loss: 0.5178 Validation loss: 0.5182 (5.354514122009277 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [21/10000], Training loss: 0.5157 Validation loss: 0.5168 (5.437706708908081 seconds)
+Epoch [22/10000], Training loss: 0.5149 Validation loss: 0.5150 (5.368399620056152 seconds)
+Epoch [23/10000], Training loss: 0.5126 Validation loss: 0.5141 (5.603687286376953 seconds)
+Epoch [24/10000], Training loss: 0.5107 Validation loss: 0.5144 (5.674258232116699 seconds)
+Epoch [25/10000], Training loss: 0.5095 Validation loss: 0.5111 (5.590966463088989 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [26/10000], Training loss: 0.5076 Validation loss: 0.5113 (5.469773054122925 seconds)
+Epoch [27/10000], Training loss: 0.5056 Validation loss: 0.5080 (5.56898307800293 seconds)
+Epoch [28/10000], Training loss: 0.5041 Validation loss: 0.5069 (5.418434381484985 seconds)
+Epoch [29/10000], Training loss: 0.5031 Validation loss: 0.5061 (5.434514045715332 seconds)
+Epoch [30/10000], Training loss: 0.5012 Validation loss: 0.5039 (5.347948789596558 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [31/10000], Training loss: 0.4993 Validation loss: 0.5033 (5.530445098876953 seconds)
+Epoch [32/10000], Training loss: 0.4983 Validation loss: 0.5027 (5.796904802322388 seconds)
+Epoch [33/10000], Training loss: 0.4968 Validation loss: 0.5011 (5.270514249801636 seconds)
+Epoch [34/10000], Training loss: 0.4961 Validation loss: 0.4996 (5.929287672042847 seconds)
+Epoch [35/10000], Training loss: 0.4945 Validation loss: 0.5010 (5.453819751739502 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [36/10000], Training loss: 0.4932 Validation loss: 0.4973 (5.844162464141846 seconds)
+Epoch [37/10000], Training loss: 0.4917 Validation loss: 0.4991 (5.680763244628906 seconds)
+Epoch [38/10000], Training loss: 0.4903 Validation loss: 0.4972 (5.403777360916138 seconds)
+Epoch [39/10000], Training loss: 0.4886 Validation loss: 0.4949 (5.719161033630371 seconds)
+Epoch [40/10000], Training loss: 0.4883 Validation loss: 0.4962 (5.468504190444946 seconds)
+checkpointing torch model & optimizer to checkpoint.pt
+Epoch [41/10000], Training loss: 0.4867 Validation loss: 0.4949 (5.65616130828857
