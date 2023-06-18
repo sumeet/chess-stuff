@@ -195,18 +195,18 @@ OUTPUT_H5_FILENAME = "input.h5"
 if __name__ == '__main__':
     with gzip.open("output.chess.gz", "rb") as f:
         line_pairs = ((line1, line2) for line1, line2 in zip(f, f))
-        training_size = 200_000
-        line_pairs = islice(line_pairs, training_size)
+        #training_size = 200_000
+        #line_pairs = islice(line_pairs, training_size)
 
         with h5py.File(OUTPUT_H5_FILENAME, "w") as f:
             input_board_ds = f.create_dataset(
-                "input_board", (0, 12, 8, 8), maxshape=(None, 12, 8, 8), dtype="float16", chunks=True, compression="gzip"
+                "input_board", (0, 12, 8, 8), maxshape=(None, 12, 8, 8), dtype="float16", chunks=(10_000, 12, 8, 8), compression="gzip"
             )
             input_extras_ds = f.create_dataset(
-                "input_extras", (0, 7), maxshape=(None, 7), dtype="float16", chunks=True, compression="gzip"
+                "input_extras", (0, 7), maxshape=(None, 7), dtype="float16", chunks=(10_000, 7), compression="gzip"
             )
             output_ds = f.create_dataset(
-                "output", (0, 134), maxshape=(None, 134), dtype="float16", chunks=True, compression="gzip"
+                "output", (0, 134), maxshape=(None, 134), dtype="float16", chunks=(10_000, 134), compression="gzip"
             )
 
         with multiprocessing.Pool() as p:

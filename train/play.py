@@ -116,11 +116,12 @@ def get_most_confident_legal_moves(output):
                 piece, move = piece_and_move(source_index, dest_index, piece_index)
                 probs_and_piecemoves.append((source_prob + dest_prob + piece_prob, piece, move))
 
-    # legal_moves = {move.uci()[:4] for move in board.legal_moves}
-    legal_moves = list(board.legal_moves)
+    legal_moves_strs = {move.uci()[:4] for move in board.legal_moves}
     acc = []
     printed = 0
     for (prob, piece, move) in probs_and_piecemoves:
+        if move not in legal_moves_strs: continue
+
         move = find_move(board, piece, move)
         if not move:
             continue

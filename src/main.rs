@@ -85,9 +85,9 @@ impl Visitor for GameCollector {
         let mut end_moves = vec![];
         std::mem::swap(&mut end_moves, &mut self.moves);
 
-        if end_pos.fullmoves() > unsafe { NonZeroU32::new_unchecked(50) } {
-            return KeepGoing;
-        }
+        // if end_pos.fullmoves() > unsafe { NonZeroU32::new_unchecked(50) } {
+        //     return KeepGoing;
+        // }
 
         let outcome = end_pos.outcome();
         // for now also filter out draws because we only want to choose
