@@ -1,12 +1,12 @@
-from functools import cached_property
+from functools import cached_property, cache
 
 import torch
 import gzip
 import h5py
-from torch.utils.data import TensorDataset, Dataset, random_split
+from torch.utils.data import TensorDataset, Dataset, random_split, Subset
 
 
-def split_perc(dataset, percentages):
+def random_split_perc(dataset, percentages):
     total_data_len = len(dataset)
     split_lengths = [int(total_data_len * p) for p in percentages]
     # If there is any difference in sum, assign it to the last length
@@ -14,6 +14,17 @@ def split_perc(dataset, percentages):
     if sum_of_lengths != total_data_len:
         split_lengths[-1] += total_data_len - sum_of_lengths
     return random_split(dataset, lengths=split_lengths)
+
+
+def ordered_split_perc(dataset, percentages):
+    total_data_len = len(dataset)
+    split_lengths = [int(total_data_len * p) for p in percentages]
+    # If there is any difference in sum, assign it to the last length
+    sum_of_lengths = sum(split_lengths)
+    if sum_of_lengths != total_data_len:
+        split_lengths[-1] += total_data_len - sum_of_lengths
+    return [Subset(dataset, range(start, start + length))
+            for start, length in zip([0] + split_lengths[:-1], split_lengths)]
 
 
 import contextlib
@@ -136,106 +147,85 @@ if __name__ == '__main__':
                 output = self.file["output"][idx]
                 return input_board, input_extras, output
 
+
         class CachedHDF5Dataset(Dataset):
+            KEYS = ["input_board", "input_extras", "output"]
 
-            def __init__(self, file_path, max_memory_size_bytes, cache_chunk_len, max_chunk_hits, worker_id=None, num_workers=None):
+            def __init__(self, file_path):
                 self.file_path = file_path
+                self.worker_cache = {}
+                self.chunk_size = None
+                self.chunk_start = None
+                self.chunk_end = None
 
-                self.worker_id = worker_id
-                self.num_workers = num_workers
-
-                self.file = h5py.File(self.file_path, 'r')
-                self.total_length = len(self.file['input_board'])
-
-                self.max_memory_size_bytes = max_memory_size_bytes
-                self.cache_chunk_len = cache_chunk_len
-                self.max_chunk_hits = max_chunk_hits
-
-                self.cache = {}
-                self.next_segment_idx = 0
-
-                # Calculate how many chunks can fit in max_memory_size_bytes
-                single_item_size_bytes = (self.file['input_board'][0].nbytes
-                                          + self.file['input_extras'][0].nbytes
-                                          + self.file['output'][0].nbytes)
-                self.max_chunks = (self.max_memory_size_bytes - 1) // (single_item_size_bytes * self.cache_chunk_len) + 1
-
+            @cache
             def __len__(self):
-                single_item_size_bytes = (self.file['input_board'][0].nbytes +
-                                          self.file['input_extras'][0].nbytes +
-                                          self.file['output'][0].nbytes)
-                max_derivable_items = self.max_memory_size_bytes // single_item_size_bytes
-                return min(self.total_length, max_derivable_items)
-
-            def load_next_chunk(self):
-                if self.next_segment_idx * self.cache_chunk_len >= self.total_length:
-                    self.next_segment_idx = 0
-
-                chunk_start = self.next_segment_idx * self.cache_chunk_len
-                chunk_end = chunk_start + self.cache_chunk_len
-
-                def wrap_around_slice(field):
-                    if chunk_end > self.total_length:
-                        overflow_end = chunk_end - self.total_length
-                        return torch.cat([
-                            torch.tensor(self.file[field][chunk_start:self.total_length]),
-                            torch.tensor(self.file[field][:overflow_end])
-                        ])
-                    else:
-                        return torch.tensor(self.file[field][chunk_start:chunk_end])
-
-                chunk = {
-                    'input_board': wrap_around_slice('input_board'),
-                    'input_extras': wrap_around_slice('input_extras'),
-                    'output': wrap_around_slice('output'),
-                    'hits': 0  # Hits should be an integer
-                }
-                self.next_segment_idx += 1
-                return chunk
-
-            def fetch(self, idx):
-                chunk_idx = idx // self.cache_chunk_len
-                local_idx = idx % self.cache_chunk_len
-
-                if chunk_idx not in self.cache:
-                    print(f'seeding chunk {chunk_idx} into cache')
-                    self.cache[chunk_idx] = self.load_next_chunk()
-
-                chunk = self.cache[chunk_idx]
-                chunk['hits'] += 1
-                if chunk['hits'] >= self.max_chunk_hits:
-                    print(f'deleting chunk {chunk_idx} from cache, and loading next chunk')
-                    chunk = self.cache[chunk_idx] = self.load_next_chunk()
-
-                return chunk['input_board'][local_idx], chunk['input_extras'][local_idx], chunk['output'][local_idx]
+                with self.open_file() as f:
+                    return len(f[self.KEYS[0]])
 
             def __getitem__(self, idx):
-                return self.fetch(idx % self.total_length)
+                # our_idx = idx - self.chunk_start
+                # if our_idx < 0 or our_idx >= self.chunk_size:
+                #     raise Exception(f"Index {idx} out of my range ({self.chunk_start}, {self.chunk_end})")
+                # Chatgpt says the math just works out
+                our_idx = idx % self.chunk_size
+                return tuple(self.worker_cache[key][our_idx] for key in self.KEYS)
 
-        dataset = CachedHDF5Dataset("./input.h5", max_memory_size_bytes=50_000_000_000, cache_chunk_len=10_000, max_chunk_hits=10_000)
+            def read_into_worker_cache(self):
+                if self.worker_cache:
+                    print('trying to read into worker cache but already read')
+                    return
+
+                if not (worker_info := torch.utils.data.get_worker_info()):
+                    raise Exception("No worker info")
+                num_workers = worker_info.num_workers
+                worker_id = worker_info.id
+                print(f'worker_id {worker_id} reading into worker cache')
+                assert worker_id < num_workers
+                self.chunk_size = len(self) // num_workers
+                print(f'setting chunk_size to {self.chunk_size} (num_workers: {num_workers}')
+                self.chunk_start = self.chunk_size * worker_id
+                self.chunk_end = self.chunk_size * (worker_id + 1) if worker_id < num_workers - 1 else len(self)
+                with self.open_file() as f:
+                    self.worker_cache = {key: f[key][self.chunk_start:self.chunk_end] for key in self.KEYS}
+                print('done reading into worker cache')
+
+            def open_file(self):
+                return h5py.File(self.file_path, "r")
+
+        dataset = CachedHDF5Dataset("./input_100k.h5")
 
     num_epochs = 10_000
-    training_set, validation_set = split_perc(dataset, [0.8, 0.2])
+    # training_set, validation_set = split_perc(dataset, [0.8, 0.2])
+    training_set, validation_set = ordered_split_perc(dataset, [0.8, 0.2])
+    #training_set, validation_set, _ = ordered_split_perc(dataset, [0.01, 0.01, 0.98])
 
     training_dataloader = DataLoader(training_set,
-                                     shuffle=True,
+                                     shuffle=False,
+                                     drop_last=True,
                                      batch_size=10_000,
                                      persistent_workers=True,
                                      num_workers=cpu_count() - 1,
                                      prefetch_factor=50,
+                                     worker_init_fn=lambda *x: dataset.read_into_worker_cache(),
                                      pin_memory=True)
     validation_dataloader = DataLoader(validation_set,
-                                       shuffle=True,
+                                       shuffle=False,
+                                       drop_last=True,
                                        batch_size=10_000,
                                        persistent_workers=True,
                                        num_workers=cpu_count() - 1,
                                        prefetch_factor=50,
+                                       worker_init_fn=lambda *x: dataset.read_into_worker_cache(),
                                        pin_memory=True)
 
+    print('starting the epochs')
     for epoch in range(num_epochs):
         epoch_start = time.time()
 
+        print('running training')
         training_loss = model.run(training_dataloader, is_train=True)
+        print('running validation')
         validation_loss = model.run(validation_dataloader, is_train=False)
 
         if epoch % 5 == 0:
