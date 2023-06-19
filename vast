@@ -1,6 +1,6 @@
 #!/bin/bash
-IP=75.142.233.14
-PORT=27430
+IP=220.100.37.183
+PORT=50773
 
 case $1 in
   scp)
