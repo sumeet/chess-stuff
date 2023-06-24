@@ -1,7 +1,4 @@
-from functools import cached_property, cache
-
 import torch
-import gzip
 import h5py
 from torch.utils.data import TensorDataset, Dataset, random_split, Subset, IterableDataset
 
@@ -31,7 +28,6 @@ import contextlib
 
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.init as init
 
 
 # output format:
@@ -40,8 +36,11 @@ import torch.nn.init as init
 class ChessMovePredictor(nn.Module):
     def __init__(self):
         super(ChessMovePredictor, self).__init__()
-        self.conv1 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(12, 12, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
         # 128*8*8 is the size of the flattened conv layer output,
         # and 7 is the size of the extra features tensor
         self.fc1 = nn.Linear(128 * 8 * 8 + 7, 256)
@@ -51,6 +50,9 @@ class ChessMovePredictor(nn.Module):
     def forward(self, board_tensor, extra_features):
         out = F.relu(self.conv1(board_tensor))
         out = F.relu(self.conv2(out))
+        out = F.relu(self.conv3(out))
+        out = F.relu(self.conv4(out))
+        out = F.relu(self.conv5(out))
         out = out.view(out.size(0), -1)  # Flatten tensor
         out = torch.cat((out, extra_features), dim=1)  # Concatenate extra features
         out = self.relu(self.fc1(out))
@@ -148,7 +150,7 @@ if __name__ == '__main__':
 
         class CachedHDF5Dataset(IterableDataset):
 
-            AVAIL_MEMORY = 40 * 1024 * 1024 * 1024  # 50 GB
+            AVAIL_MEMORY = 40 * 1024 * 1024 * 1024
             KEYS = ["input_board", "input_extras", "output"]
 
             seek_position = Value('i', 0)
@@ -165,19 +167,20 @@ if __name__ == '__main__':
                     chunk_end = current_seek_position + self.chunk_size
                     self.seek_position.value = chunk_end % self.total_len
 
-                worker_cache = {}
-                with self.open_file() as f:
-                    for key in self.KEYS:
-                        if chunk_end > self.total_len:
-                            begin = f[key][chunk_start:]
-                            end = f[key][:chunk_end % self.total_len]
-                            print(f'grabbing {key} from {chunk_start} to {self.total_len} and 0 to {chunk_end % self.total_len}')
-                            worker_cache[key] = torch.cat((torch.from_numpy(begin), torch.from_numpy(end)))
-                        else:
-                            print(f'grabbing {key} from {chunk_start} to {chunk_end}')
-                            worker_cache[key] = f[key][chunk_start:chunk_end]
+                chunk_groups = []
+                if chunk_end > self.total_len:
+                    chunk_groups.append((chunk_start, self.total_len))
+                    chunk_groups.append((0, chunk_end % self.total_len))
+                else:
+                    chunk_groups.append((chunk_start, chunk_end))
 
-                return zip(*(worker_cache[key] for key in self.KEYS))
+                print(f'loading chunk groups: {chunk_groups}')
+
+                with self.open_file() as f:
+                    for chunk_start, chunk_end in chunk_groups:
+                        this_batch = [f[key][chunk_start:chunk_end] for key in self.KEYS]
+                        for i in range(len(this_batch[0])):
+                            yield tuple([batch[i] for batch in this_batch])
 
             def worker_init(self):
                 worker_info = torch.utils.data.get_worker_info()
@@ -195,7 +198,7 @@ if __name__ == '__main__':
                 return h5py.File(self.file_path, "r")
 
 
-        dataset = CachedHDF5Dataset("./input_100k.h5")
+        dataset = CachedHDF5Dataset("./input_ALL.h5")
 
     num_epochs = 10_000
     # training_set, validation_set = split_perc(dataset, [0.8, 0.2])

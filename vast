@@ -1,6 +1,6 @@
 #!/bin/bash
 IP=220.100.37.183
-PORT=50773
+PORT=50768
 
 case $1 in
   scp)
@@ -9,6 +9,7 @@ case $1 in
   seed)
     scp -r -P $PORT ./train root@${IP}:./train
     ssh -p $PORT root@${IP} apt-get -y install vim htop
+    ssh -p $PORT root@${IP} conda install h5py
     ssh -p $PORT root@${IP} "cat > /root/.vimrc" <<'EOF'
 syntax on
 set et
@@ -22,7 +23,7 @@ EOF
   grab)
      while true
      do
-      scp -r -P $PORT root@${IP}:./train/train/checkpoint.pt ./train/checkpoint.pt
+      scp -r -P $PORT root@${IP}:./train/checkpoint.pt ./train/checkpoint.pt
       sleep 200
     done
     ;;
