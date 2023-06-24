@@ -223,22 +223,25 @@ if __name__ == '__main__':
     #                                    pin_memory=True)
 
     print('starting the epochs')
+    training_losses = []
     for epoch in range(num_epochs):
         epoch_start = time.time()
 
         print('running training')
         training_loss = model.run(training_dataloader, is_train=True)
+        training_losses.append(training_loss.item())
         print('running validation')
         # validation_loss = model.run(validation_dataloader, is_train=False)
         validation_loss = float('nan')
 
-        if epoch % 5 == 0:
+        if True:#epoch % 4 == 0:
             filename = 'checkpoint.pt'
             print(f'checkpointing torch model & optimizer to {filename}')
             torch.save({
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'training_loss': training_loss,
+                'training_losses': training_losses,
                 'validation_loss': validation_loss,
             }, filename)
 

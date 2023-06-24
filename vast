@@ -22,7 +22,7 @@ EOF
   grab)
      while true
      do
-      scp -r -P $PORT root@${IP}:./train/checkpoint.pt ./train/checkpoint.pt
+      scp -r -P $PORT root@${IP}:./train/train/checkpoint.pt ./train/checkpoint.pt
       sleep 200
     done
     ;;

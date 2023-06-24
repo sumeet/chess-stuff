@@ -93,9 +93,16 @@ def find_move(board, piecename, movestr):
             return move
     return None
 
+import torch.nn.functional as F
+
 def get_most_confident_legal_moves(output):
     print_topk_values(output)
     source_output, dest_output, piece_output = output[:, :64], output[:, 64:128], output[:, 128:]
+
+    # Apply softmax
+    source_output = F.softmax(source_output, dim=1)
+    dest_output = F.softmax(dest_output, dim=1)
+    piece_output = F.softmax(piece_output, dim=1)
 
     # Get the indices and values of the top-k values
     source_probs, source_indices = torch.topk(source_output, 64)
@@ -114,7 +121,8 @@ def get_most_confident_legal_moves(output):
         for (dest_prob, dest_index) in zip(dest_probs, dest_indices):
             for (piece_prob, piece_index) in zip(piece_probs, piece_indices):
                 piece, move = piece_and_move(source_index, dest_index, piece_index)
-                probs_and_piecemoves.append((source_prob + dest_prob + piece_prob, piece, move))
+                score = (source_prob * dest_prob * piece_prob) ** (1/3)
+                probs_and_piecemoves.append((score, piece, move))
 
     legal_moves_strs = {move.uci()[:4] for move in board.legal_moves}
     acc = []
