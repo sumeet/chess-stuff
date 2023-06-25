@@ -36,11 +36,10 @@ import torch.nn.functional as F
 class ChessMovePredictor(nn.Module):
     def __init__(self):
         super(ChessMovePredictor, self).__init__()
-        self.conv1 = nn.Conv2d(12, 12, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.conv5 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
         # 128*8*8 is the size of the flattened conv layer output,
         # and 7 is the size of the extra features tensor
         self.fc1 = nn.Linear(128 * 8 * 8 + 7, 256)
@@ -48,11 +47,10 @@ class ChessMovePredictor(nn.Module):
         self.fc_out = nn.Linear(256, 128 + 6)
 
     def forward(self, board_tensor, extra_features):
-        out = F.relu(self.conv1(board_tensor))
-        out = F.relu(self.conv2(out))
-        out = F.relu(self.conv3(out))
-        out = F.relu(self.conv4(out))
-        out = F.relu(self.conv5(out))
+        out1 = self.conv1(board_tensor)
+        out = F.relu(out1 + self.conv2(out1))  # add residual connection
+        out2 = self.conv3(out)
+        out = F.relu(out2 + self.conv4(out2))  # add residual connection
         out = out.view(out.size(0), -1)  # Flatten tensor
         out = torch.cat((out, extra_features), dim=1)  # Concatenate extra features
         out = self.relu(self.fc1(out))
@@ -150,7 +148,7 @@ if __name__ == '__main__':
 
         class CachedHDF5Dataset(IterableDataset):
 
-            AVAIL_MEMORY = 40 * 1024 * 1024 * 1024
+            AVAIL_MEMORY = 30 * 1024 * 1024 * 1024
             KEYS = ["input_board", "input_extras", "output"]
 
             seek_position = Value('i', 0)

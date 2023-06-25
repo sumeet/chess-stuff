@@ -1,15 +1,15 @@
 #!/bin/bash
 IP=220.100.37.183
-PORT=50768
+PORT=50672
 
 case $1 in
   scp)
     scp -r -P $PORT $2 root@${IP}:$3
     ;;
-  seed)
-    scp -r -P $PORT ./train root@${IP}:./train
+  upload)
+    rsync -arvz --progress -e "ssh -p $PORT" ./train root@${IP}:./
     ssh -p $PORT root@${IP} apt-get -y install vim htop
-    ssh -p $PORT root@${IP} conda install h5py
+    ssh -p $PORT root@${IP} /opt/conda/bin/conda install h5py
     ssh -p $PORT root@${IP} "cat > /root/.vimrc" <<'EOF'
 syntax on
 set et
@@ -24,6 +24,7 @@ EOF
      while true
      do
       scp -r -P $PORT root@${IP}:./train/checkpoint.pt ./train/checkpoint.pt
+      python3 -c "import torch ; print(torch.load('./train/checkpoint.pt')['training_losses'])"
       sleep 200
     done
     ;;
