@@ -40,9 +40,11 @@ class ChessMovePredictor(nn.Module):
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.conv4 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        # 128*8*8 is the size of the flattened conv layer output,
+        self.conv5 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.conv6 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        # N*8*8 is the size of the flattened conv layer output,
         # and 7 is the size of the extra features tensor
-        self.fc1 = nn.Linear(128 * 8 * 8 + 7, 256)
+        self.fc1 = nn.Linear(256 * 8 * 8 + 7, 256)
         self.relu = nn.ReLU()
         self.fc_out = nn.Linear(256, 128 + 6)
 
@@ -51,6 +53,9 @@ class ChessMovePredictor(nn.Module):
         out = F.relu(out1 + self.conv2(out1))  # add residual connection
         out2 = self.conv3(out)
         out = F.relu(out2 + self.conv4(out2))  # add residual connection
+        out3 = self.conv5(out)
+        out = F.relu(out3 + self.conv6(out3))  # add residual connection
+
         out = out.view(out.size(0), -1)  # Flatten tensor
         out = torch.cat((out, extra_features), dim=1)  # Concatenate extra features
         out = self.relu(self.fc1(out))
@@ -75,13 +80,13 @@ class ChessMovePredictor(nn.Module):
                 with torch.cuda.amp.autocast():
                     outputs = model(inputs_board, inputs_extras)
 
-                    targets_source, targets_dest, targets_square = targets[:, :64], targets[:, 64:128], targets[:, 128:]
-                    outputs_source, outputs_dest, outputs_square = outputs[:, :64], outputs[:, 64:128], outputs[:, 128:]
+                    targets_source, targets_dest, targets_piece = targets[:, :64], targets[:, 64:128], targets[:, 128:]
+                    outputs_source, outputs_dest, outputs_piece = outputs[:, :64], outputs[:, 64:128], outputs[:, 128:]
                     loss_source = loss_fn(outputs_source, targets_source)
                     loss_dest = loss_fn(outputs_dest, targets_dest)
-                    loss_square = loss_fn(outputs_square, targets_square)
+                    loss_piece = loss_fn(outputs_piece, targets_piece)
                     # Compute total loss
-                    loss = loss_source + loss_dest + loss_square
+                    loss = loss_source + loss_dest + loss_piece
                     tot_loss += loss
                     num_iterations += 1
 
