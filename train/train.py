@@ -1,96 +1,6 @@
 import torch
-import torch.distributed as dist
 import h5py
 from torch.utils.data import TensorDataset, Dataset, random_split, Subset, IterableDataset
-#from multiprocessing import cpu_count, Value
-from torch.multiprocessing import cpu_count, Value
-from torch.utils.data import DataLoader
-import time
-import os
-from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data.distributed import DistributedSampler
-
-
-
-class CachedHDF5Dataset(IterableDataset):
-
-    AVAIL_MEMORY = 30 * 1024 * 1024 * 1024
-    KEYS = ["input_board", "input_extras", "output"]
-
-    seek_position = Value('i', 0)
-
-    def __init__(self, file_path, total_len=None):
-        self.file_path = file_path
-        self.chunk_size = None
-        if total_len:
-            self.total_len = total_len
-        else:
-            with self.open_file() as f:
-                self.total_len = len(f[self.KEYS[0]])
-
-        self.should_keep_in_memory = False
-        self.kept_in_memory = None
-
-    def __iter__(self):
-        if self.should_keep_in_memory and self.kept_in_memory:
-            for i in range(len(self.kept_in_memory[0])):
-                yield tuple([batch[i] for batch in self.kept_in_memory])
-            return
-
-        # with self.seek_position.get_lock():
-        #     current_seek_position = self.seek_position.value
-        #     chunk_start = current_seek_position
-        #     chunk_end = current_seek_position + self.chunk_size
-        #     self.seek_position.value = chunk_end % self.total_len
-        #
-        # chunk_groups = []
-        # if chunk_end > self.total_len:
-        #     chunk_groups.append((chunk_start, self.total_len))
-        #     chunk_groups.append((0, chunk_end % self.total_len))
-        # else:
-        #     chunk_groups.append((chunk_start, chunk_end))
-        #
-        # print(f'loading chunk groups: {chunk_groups}')
-        chunk_groups = [(self.chunk_start, self.chunk_end)]
-
-        with self.open_file() as f:
-            for chunk_start, chunk_end in chunk_groups:
-                # modify chunk_start and chunk_end to take into account rank and world_count:
-                rank = self.rank
-                world_size = self.world_size
-                chunk_start = chunk_start + rank * (chunk_end - chunk_start) // world_size
-                chunk_end = chunk_start + (chunk_end - chunk_start) // world_size
-                print(f'loading chunk in {rank} / {world_size}: {chunk_start} - {chunk_end}')
-
-                this_batch = [f[key][chunk_start:chunk_end] for key in self.KEYS]
-                if self.should_keep_in_memory:
-                    self.kept_in_memory = this_batch
-                for i in range(len(this_batch[0])):
-                    yield tuple([batch[i] for batch in this_batch])
-
-    def worker_init(self, *args):
-        worker_info = torch.utils.data.get_worker_info()
-        assert worker_info is not None
-        num_workers = worker_info.num_workers
-
-        with self.open_file() as f:
-            sample_memory = 0
-            for key in self.KEYS:
-                sample_memory += f[key][0].nbytes
-
-        if sample_memory * self.total_len <= self.AVAIL_MEMORY:
-            self.chunk_size = self.total_len // num_workers * 2
-            self.should_keep_in_memory = True
-        else:
-            self.chunk_size = self.AVAIL_MEMORY // (sample_memory * num_workers)
-
-        self.chunk_start = self.chunk_size * worker_info.id
-        self.chunk_end = self.chunk_start + self.chunk_size
-
-    def open_file(self):
-        return h5py.File(self.file_path, "r")
-
-
 
 
 def random_split_perc(dataset, percentages):
@@ -152,20 +62,19 @@ class ChessMovePredictor(nn.Module):
         out = self.fc_out(out)
         return out
 
-    @staticmethod
-    def run(model, dataloader, is_train, rank):
+    def run(self, dataloader, is_train):
         print("Running model, is_train:", is_train)
 
-        model = model.train() if is_train else model.eval()
+        model = self.train() if is_train else self.eval()
         tot_loss = 0
         num_iterations = 0
 
         ctx = contextlib.nullcontext() if is_train else torch.no_grad()
         with ctx:
             for inputs_board, inputs_extras, targets in dataloader:
-                inputs_board = inputs_board.to(rank)
-                inputs_extras = inputs_extras.to(rank)
-                targets = targets.to(rank)
+                inputs_board = inputs_board.to(device)
+                inputs_extras = inputs_extras.to(device)
+                targets = targets.to(device)
 
                 # Forward pass
                 with torch.cuda.amp.autocast():
@@ -190,37 +99,29 @@ class ChessMovePredictor(nn.Module):
         return tot_loss / num_iterations
 
 
-#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = ChessMovePredictor()
-# model = model.to(device)
+model = model.to(device)
 # loss_fn = nn.NLLLoss()
 loss_fn = nn.BCEWithLogitsLoss()
 # loss_fn = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters())
 
+from multiprocessing import cpu_count, Value
+from torch.utils.data import DataLoader
+import time
 
-def main(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-    os.environ['RANK'] = str(rank)
-    os.environ['WORLD_SIZE'] = str(world_size)
-
-    torch.cuda.set_device(rank)
-    dist.init_process_group(backend='nccl')
-
+if __name__ == '__main__':
     if 0:
-        print("Loading data from input_ALL.h5 into memory...")
-        total_len = 1_000_000
+        print("Loading data from input.h5 into memory...")
+        stop = 50_000
 
-        start = rank * total_len // world_size
-        stop = (rank + 1) * total_len // world_size
-
-        with h5py.File('input_ALL.h5', "r") as f:
-            input_board_batch = torch.from_numpy(f["input_board"][start:stop])
+        with h5py.File('input.h5', "r") as f:
+            input_board_batch = torch.from_numpy(f["input_board"][:stop])
             print("input_board_batch.shape", input_board_batch.shape)
-            input_extras_batch = torch.from_numpy(f["input_extras"][start:stop])
+            input_extras_batch = torch.from_numpy(f["input_extras"][:stop])
             print("input_extras_batch.shape", input_extras_batch.shape)
-            output_batch = torch.from_numpy(f["output"][start:stop])
+            output_batch = torch.from_numpy(f["output"][:stop])
             print("output_batch.shape", output_batch.shape)
 
         dataset = TensorDataset(input_board_batch,
@@ -250,16 +151,63 @@ def main(rank, world_size):
                 return input_board, input_extras, output
 
 
-        dataset = CachedHDF5Dataset("./input_ALL.h5", total_len=5_000_000)
+        class CachedHDF5Dataset(IterableDataset):
+
+            AVAIL_MEMORY = 30 * 1024 * 1024 * 1024
+            KEYS = ["input_board", "input_extras", "output"]
+
+            seek_position = Value('i', 0)
+
+            def __init__(self, file_path):
+                self.file_path = file_path
+                self.chunk_size = None
+                self.total_len = None
+
+            def __iter__(self):
+                with self.seek_position.get_lock():
+                    current_seek_position = self.seek_position.value
+                    chunk_start = current_seek_position
+                    chunk_end = current_seek_position + self.chunk_size
+                    self.seek_position.value = chunk_end % self.total_len
+
+                chunk_groups = []
+                if chunk_end > self.total_len:
+                    chunk_groups.append((chunk_start, self.total_len))
+                    chunk_groups.append((0, chunk_end % self.total_len))
+                else:
+                    chunk_groups.append((chunk_start, chunk_end))
+
+                print(f'loading chunk groups: {chunk_groups}')
+
+                with self.open_file() as f:
+                    for chunk_start, chunk_end in chunk_groups:
+                        this_batch = [f[key][chunk_start:chunk_end] for key in self.KEYS]
+                        for i in range(len(this_batch[0])):
+                            yield tuple([batch[i] for batch in this_batch])
+
+            def worker_init(self):
+                worker_info = torch.utils.data.get_worker_info()
+                assert worker_info is not None
+                num_workers = worker_info.num_workers
+
+                with self.open_file() as f:
+                    self.total_len = len(f[self.KEYS[0]])
+                    sample_memory = 0
+                    for key in self.KEYS:
+                        sample_memory += f[key][0].nbytes
+                self.chunk_size = self.AVAIL_MEMORY // (sample_memory * num_workers)
+
+            def open_file(self):
+                return h5py.File(self.file_path, "r")
+
+
+        dataset = CachedHDF5Dataset("./input_ALL.h5")
 
     num_epochs = 10_000
     # training_set, validation_set = split_perc(dataset, [0.8, 0.2])
     #training_set, validation_set = ordered_split_perc(dataset, [0.8, 0.2])
     # training_set, validation_set, _ = ordered_split_perc(dataset, [0.01, 0.01, 0.98])
     training_set = dataset
-    dataset.rank = rank
-    dataset.world_size = world_size
-    # sampler = DistributedSampler(training_set)
 
     training_dataloader = DataLoader(training_set,
                                      shuffle=False,
@@ -267,13 +215,9 @@ def main(rank, world_size):
                                      batch_size=10_000,
                                      persistent_workers=True,
                                      num_workers=cpu_count() - 1,
-                                     # prefetch_factor=50,
-                                     worker_init_fn=dataset.worker_init,
+                                     prefetch_factor=50,
+                                     worker_init_fn=lambda *x: dataset.worker_init(),
                                      pin_memory=True)
-    rank = dist.get_rank()
-    model = ChessMovePredictor()
-    model = model.to(rank)
-    model = DistributedDataParallel(model, device_ids=[rank])
     # validation_dataloader = DataLoader(validation_set,
     #                                    shuffle=False,
     #                                    drop_last=True,
@@ -288,10 +232,9 @@ def main(rank, world_size):
     training_losses = []
     for epoch in range(num_epochs):
         epoch_start = time.time()
-        # sampler.set_epoch(epoch)
 
         print('running training')
-        training_loss = ChessMovePredictor.run(model, training_dataloader, is_train=True, rank=rank)
+        training_loss = model.run(training_dataloader, is_train=True)
         training_losses.append(training_loss.item())
         print('running validation')
         # validation_loss = model.run(validation_dataloader, is_train=False)
@@ -311,9 +254,3 @@ def main(rank, world_size):
         time_elapsed = time.time() - epoch_start
         print('Epoch [{}/{}], Training loss: {:.4f} Validation loss: {:.4f} ({} seconds)'
               .format(epoch + 1, num_epochs, training_loss, validation_loss, time_elapsed))
-
-
-if __name__ == '__main__':
-    world_size = torch.cuda.device_count()
-    import torch.multiprocessing as mp
-    mp.spawn(main, args=(world_size,), nprocs=world_size, join=True)
