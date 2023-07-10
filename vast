@@ -1,6 +1,6 @@
 #!/bin/bash
-IP=220.100.37.183
-PORT=50710
+IP=31.133.120.170
+PORT=40460
 
 case $1 in
   scp)
@@ -15,6 +15,9 @@ syntax on
 set et
 set shiftwidth=4
 set tabstop=4
+EOF
+    ssh -p $PORT root@${IP} "cat > /root/.tmux.conf" <<'EOF'
+setw -g mouse on
 EOF
     ;;
   ssh)
