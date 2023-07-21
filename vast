@@ -1,15 +1,20 @@
 #!/bin/bash
-IP=31.133.120.170
-PORT=40460
+IP=193.150.86.112
+PORT=22903
+
+set -ex
 
 case $1 in
+  grab)
+    scp -r -P $PORT root@${IP}:$2 $3
+    ;;
   scp)
     scp -r -P $PORT $2 root@${IP}:$3
     ;;
   upload)
-    rsync -arvz --progress -e "ssh -p $PORT" ./train root@${IP}:./
+    rsync -arvz --exclude=train/checkpoint.pt --progress -e "ssh -p $PORT" ./train root@${IP}:./
     ssh -p $PORT root@${IP} apt-get -y install vim htop
-    ssh -p $PORT root@${IP} /opt/conda/bin/conda install h5py
+    ssh -p $PORT root@${IP} bash -c 'yes | /opt/conda/bin/conda install h5py'
     ssh -p $PORT root@${IP} "cat > /root/.vimrc" <<'EOF'
 syntax on
 set et
@@ -21,9 +26,10 @@ setw -g mouse on
 EOF
     ;;
   ssh)
-    TERM=xterm-256color ssh -p $PORT root@${IP}
+    shift 1
+    TERM=xterm-256color ssh -p $PORT root@${IP} "$@"
     ;;
-  grab)
+  checkpoint)
      while true
      do
       scp -r -P $PORT root@${IP}:./train/checkpoint.pt ./train/checkpoint.pt

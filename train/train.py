@@ -1,3 +1,5 @@
+import itertools
+
 import torch
 import h5py
 from torch.utils.data import TensorDataset, Dataset, random_split, Subset, IterableDataset
@@ -37,24 +39,16 @@ class ChessMovePredictor(nn.Module):
     def __init__(self):
         super(ChessMovePredictor, self).__init__()
         self.conv1 = nn.Conv2d(12, 64, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.conv5 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
-        self.conv6 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         # N*8*8 is the size of the flattened conv layer output,
         # and 7 is the size of the extra features tensor
-        self.fc1 = nn.Linear(256 * 8 * 8 + 7, 256)
-        self.relu = nn.ReLU()
+        self.fc1 = nn.Linear(128 * 8 * 8 + 7, 256)
         self.fc_out = nn.Linear(256, 128 + 6)
+        self.relu = nn.ReLU()
 
     def forward(self, board_tensor, extra_features):
-        out1 = self.conv1(board_tensor)
-        out = F.relu(out1 + self.conv2(out1))  # add residual connection
-        out2 = self.conv3(out)
-        out = F.relu(out2 + self.conv4(out2))  # add residual connection
-        out3 = self.conv5(out)
-        out = F.relu(out3 + self.conv6(out3))  # add residual connection
+        out = self.relu(self.conv1(board_tensor))
+        out = self.relu(self.conv2(out))
 
         out = out.view(out.size(0), -1)  # Flatten tensor
         out = torch.cat((out, extra_features), dim=1)  # Concatenate extra features
@@ -63,8 +57,6 @@ class ChessMovePredictor(nn.Module):
         return out
 
     def run(self, dataloader, is_train):
-        print("Running model, is_train:", is_train)
-
         model = self.train() if is_train else self.eval()
         tot_loss = 0
         num_iterations = 0
@@ -153,17 +145,27 @@ if __name__ == '__main__':
 
         class CachedHDF5Dataset(IterableDataset):
 
-            AVAIL_MEMORY = 30 * 1024 * 1024 * 1024
+            AVAIL_MEMORY = 40 * 1024 * 1024 * 1024
             KEYS = ["input_board", "input_extras", "output"]
 
             seek_position = Value('i', 0)
 
-            def __init__(self, file_path):
+            def __init__(self, file_path, total_len=None):
                 self.file_path = file_path
                 self.chunk_size = None
-                self.total_len = None
+                if total_len:
+                    self.total_len = total_len
+                else:
+                    with self.open_file() as f:
+                        self.total_len = len(f[self.KEYS[0]])
+                self.should_keep_in_memory = False
+                self.kept_in_memory = None
 
             def __iter__(self):
+                if self.should_keep_in_memory and self.kept_in_memory:
+                    yield from zip(*self.kept_in_memory)
+                    return
+
                 with self.seek_position.get_lock():
                     current_seek_position = self.seek_position.value
                     chunk_start = current_seek_position
@@ -180,10 +182,12 @@ if __name__ == '__main__':
                 print(f'loading chunk groups: {chunk_groups}')
 
                 with self.open_file() as f:
-                    for chunk_start, chunk_end in chunk_groups:
-                        this_batch = [f[key][chunk_start:chunk_end] for key in self.KEYS]
-                        for i in range(len(this_batch[0])):
-                            yield tuple([batch[i] for batch in this_batch])
+                    batches = [[f[key][chunk_start:chunk_end] for key in self.KEYS]
+                               for chunk_start, chunk_end in chunk_groups]
+                    batches = list(itertools.chain(*batches))
+                    if self.should_keep_in_memory:
+                        self.kept_in_memory = batches
+                    yield from zip(*batches)
 
             def worker_init(self):
                 worker_info = torch.utils.data.get_worker_info()
@@ -191,17 +195,22 @@ if __name__ == '__main__':
                 num_workers = worker_info.num_workers
 
                 with self.open_file() as f:
-                    self.total_len = len(f[self.KEYS[0]])
                     sample_memory = 0
                     for key in self.KEYS:
                         sample_memory += f[key][0].nbytes
-                self.chunk_size = self.AVAIL_MEMORY // (sample_memory * num_workers)
+
+                if sample_memory * self.total_len < self.AVAIL_MEMORY:
+                    print('dataset will fit in memory, so shoving into memory')
+                    self.chunk_size = self.total_len // num_workers
+                    self.should_keep_in_memory = True
+                else:
+                    self.chunk_size = self.AVAIL_MEMORY // (sample_memory * num_workers)
 
             def open_file(self):
                 return h5py.File(self.file_path, "r")
 
 
-        dataset = CachedHDF5Dataset("./input_ALL.h5")
+        dataset = CachedHDF5Dataset("./input_ALL.h5", total_len=750_000)
 
     num_epochs = 10_000
     # training_set, validation_set = split_perc(dataset, [0.8, 0.2])
@@ -233,10 +242,8 @@ if __name__ == '__main__':
     for epoch in range(num_epochs):
         epoch_start = time.time()
 
-        print('running training')
         training_loss = model.run(training_dataloader, is_train=True)
         training_losses.append(training_loss.item())
-        print('running validation')
         # validation_loss = model.run(validation_dataloader, is_train=False)
         validation_loss = float('nan')
 
